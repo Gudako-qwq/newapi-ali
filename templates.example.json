@@ -1,0 +1,28 @@
+[
+  {
+    "id": "vertex-json",
+    "label": "Vertex AI · 服务账号 JSON",
+    "type": 41,
+    "credential_kind": "vertex_json",
+    "models": ["gemini-3.8-flash", "gemini-4-argon"],
+    "group": "vertex",
+    "regions": ["us-central1", "asia-southeast1", "global"],
+    "default_region": "us-central1",
+    "base_url": "",
+    "setting": {},
+    "settings": {}
+  },
+  {
+    "id": "vertex-key",
+    "label": "Vertex AI · API Key",
+    "type": 41,
+    "credential_kind": "api_key",
+    "models": ["gemini-3.8-flash", "gemini-4-argon"],
+    "group": "vertex",
+    "regions": ["us-central1", "asia-southeast1", "global"],
+    "default_region": "asia-southeast1",
+    "base_url": "",
+    "setting": {},
+    "settings": {}
+  }
+]

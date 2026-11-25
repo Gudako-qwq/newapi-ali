@@ -1,0 +1,29 @@
+services:
+  ali:
+    build: .
+    restart: unless-stopped
+    stop_grace_period: 90s
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      LISTEN_ADDR: "0.0.0.0:3000"
+      PUBLIC_ORIGIN: "${PUBLIC_ORIGIN:?Set PUBLIC_ORIGIN to your HTTPS public origin}"
+      DATABASE_PATH: "/data/ali.db"
+      BOOTSTRAP_ADMIN_USERNAME: "${BOOTSTRAP_ADMIN_USERNAME:-admin}"
+      BOOTSTRAP_ADMIN_PASSWORD: "${BOOTSTRAP_ADMIN_PASSWORD:-}"
+      LOCAL_ALLOW_WEAK_BOOTSTRAP_PASSWORD: "false"
+      UPSTREAM_URL: "${UPSTREAM_URL:-https://mangoglow.org}"
+      UPSTREAM_USERNAME: "${UPSTREAM_USERNAME:?Configure upstream username}"
+      UPSTREAM_PASSWORD: "${UPSTREAM_PASSWORD:?Configure upstream password}"
+    volumes:
+      - ali-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  ali-data:

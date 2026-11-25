@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+!.env.production.example
+data/
+.local/
+bin/
+web/node_modules/
+web/dist/
+*.exe
+coverage.out
+templates.json

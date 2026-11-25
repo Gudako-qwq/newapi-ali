@@ -1,0 +1,10 @@
+.env
+.env.*
+data
+.local
+bin
+web/node_modules
+web/dist
+*.exe
+templates.json
+.git
