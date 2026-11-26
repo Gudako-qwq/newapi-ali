@@ -4,9 +4,20 @@ import test from 'node:test'
 import {
   api,
   channelStatus,
+  newSubmissionKey,
   safeDestination,
   setSession,
 } from '../src/portal/api.js'
+
+test('public HTTP can generate submission keys without crypto.randomUUID', () => {
+  const httpCrypto = {
+    getRandomValues: (bytes) => globalThis.crypto.getRandomValues(bytes),
+  }
+  const key = newSubmissionKey(httpCrypto)
+  assert.match(key, /^[0-9a-f]{32}$/)
+  assert.notEqual(newSubmissionKey(httpCrypto), key)
+  assert.throws(() => newSubmissionKey({}), /无法生成安全的提交标识/)
+})
 
 test('login redirect stays on the local console and its known routes', () => {
   globalThis.window = { location: { origin: 'https://portal.example' } }

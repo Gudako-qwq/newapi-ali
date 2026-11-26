@@ -21,6 +21,7 @@ type Config struct {
 	UpstreamPassword           string
 	Templates                  []Template
 	SecureCookies              bool
+	PublicHTTP                 bool
 	AllowWeakBootstrapPassword bool
 }
 
@@ -55,18 +56,38 @@ func loadConfig() (Config, error) {
 		return config, errors.New("LOCAL_ALLOW_WEAK_BOOTSTRAP_PASSWORD must be true or false")
 	}
 	config.AllowWeakBootstrapPassword = weakBootstrap
+	allowPublicHTTP, err := strconv.ParseBool(envOr("ALLOW_PUBLIC_HTTP", "false"))
+	if err != nil {
+		return config, errors.New("ALLOW_PUBLIC_HTTP must be true or false")
+	}
 	origin, err := url.Parse(config.Origin)
-	if err != nil || origin.Host == "" || origin.User != nil || origin.RawQuery != "" || origin.Fragment != "" || (origin.Path != "" && origin.Path != "/") {
+	if err != nil || origin.Hostname() == "" || origin.User != nil || origin.ForceQuery || origin.RawQuery != "" || origin.Fragment != "" || (origin.Path != "" && origin.Path != "/") {
 		return config, errors.New("PUBLIC_ORIGIN must be an origin without a path or credentials")
 	}
-	config.Origin = strings.TrimSuffix(config.Origin, "/")
-	config.SecureCookies = origin.Scheme == "https"
-	if !config.SecureCookies && (origin.Scheme != "http" || !loopbackHost(origin.Hostname())) {
-		return config, errors.New("PUBLIC_ORIGIN requires HTTPS except on loopback")
+	if origin.Scheme != "https" && origin.Scheme != "http" {
+		return config, errors.New("PUBLIC_ORIGIN must use http or https")
 	}
-	if !config.SecureCookies {
-		host, _, splitErr := net.SplitHostPort(config.Listen)
-		if splitErr != nil || !loopbackHost(host) {
+	hostname := strings.ToLower(origin.Hostname())
+	if strings.Contains(hostname, "*") || net.ParseIP(hostname).IsUnspecified() {
+		return config, errors.New("PUBLIC_ORIGIN must name the address used by the browser, not a bind address")
+	}
+	host := strings.ToLower(origin.Host)
+	if (origin.Scheme == "http" && origin.Port() == "80") || (origin.Scheme == "https" && origin.Port() == "443") {
+		host, _, _ = net.SplitHostPort(host)
+		if strings.Contains(host, ":") {
+			host = "[" + host + "]"
+		}
+	}
+	config.Origin = origin.Scheme + "://" + host
+	config.SecureCookies = origin.Scheme == "https"
+	if !config.SecureCookies && !loopbackHost(hostname) {
+		if !allowPublicHTTP {
+			return config, errors.New("public HTTP requires ALLOW_PUBLIC_HTTP=true; otherwise use HTTPS")
+		}
+		config.PublicHTTP = true
+	} else if !config.SecureCookies {
+		listenHost, _, splitErr := net.SplitHostPort(config.Listen)
+		if splitErr != nil || !loopbackHost(listenHost) {
 			return config, errors.New("HTTP development mode must listen on loopback")
 		}
 	}

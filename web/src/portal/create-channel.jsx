@@ -33,7 +33,7 @@ import { ChannelAuthSection } from '@/features/channels/components/drawers/secti
 import { ChannelBasicSection } from '@/features/channels/components/drawers/sections/channel-basic-section'
 import { ChannelModelsSection } from '@/features/channels/components/drawers/sections/channel-models-section'
 
-import { api } from './api'
+import { api, newSubmissionKey } from './api'
 import { Message } from './shared'
 import {
   defaultVertexTemplate,
@@ -248,10 +248,10 @@ export function CreateChannel({ templates, close, saved }) {
       models,
     }
     const body = JSON.stringify(data)
-    if (attempt.current.body !== body)
-      attempt.current = { body, key: crypto.randomUUID() }
     setBusy(true)
     try {
+      if (attempt.current.body !== body)
+        attempt.current = { body, key: newSubmissionKey() }
       saved(
         await api('channels', {
           method: 'POST',

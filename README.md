@@ -34,7 +34,9 @@ notepad .env
 | `LOCAL_ALLOW_WEAK_BOOTSTRAP_PASSWORD` | 默认 false；仅限回环 HTTP 开发模式的首次管理员，可使用 8–128 字符密码；Docker 强制关闭 |
 | `UPSTREAM_USERNAME` / `UPSTREAM_PASSWORD` | 你们公司的上游账号，仅服务端读取 |
 | `PUBLIC_ORIGIN` | 浏览器实际访问的来源，默认 `http://127.0.0.1:3000`，不能混用 localhost |
-| `LISTEN_ADDR` | 默认仅监听本机；非本机部署必须使用 HTTPS 的 `PUBLIC_ORIGIN` |
+| `LISTEN_ADDR` | 默认仅监听本机；Docker 容器内监听 `0.0.0.0:3000` |
+| `ALLOW_PUBLIC_HTTP` | 默认 `false`，仅在明确接受明文访问时设为 `true`；不会放宽来源、CSRF 或上游 HTTPS 校验 |
+| `PUBLISH_ADDR` | 仅用于 Compose，默认 `127.0.0.1:3000`；直接对外提供服务时使用 `0.0.0.0:宿主机端口` |
 | `TEMPLATES_FILE` | 可选，自定义模板 JSON 路径 |
 
 访问 `http://127.0.0.1:3000`，登录本地管理员，先在“客户管理”中“检查连接”，再开通客户。上游凭据可以暂不配置，此时本地管理仍可用，但上号和同步会明确失败。
@@ -133,21 +135,32 @@ go build -trimpath -o bin/newapi-ali.exe .
 - 限制请求体、响应体、登录频率、单用户请求频率和并发上游请求；不信任客户端 `X-Forwarded-For`。部署反向代理后建议额外做边缘限流，应用看到的是代理 IP，共享登录 IP 额度可能影响多人同时登录。
 - 本项目仅实现单实例 SQLite。不要多副本共享此数据库。定期备份完整 SQLite 状态，停机备份，或使用 SQLite 在线备份；WAL 模式下不能只拷贝主文件。
 - `.env`、私有模板和数据库必须限制操作系统读取权限并排除代码提交、公开备份与静态目录。Windows 文件 ACL 应由部署人员设置，不能仅依赖 Unix 权限位。
-- 正式部署：配置 HTTPS 反向代理、`PUBLIC_ORIGIN=https://你的域名`，TLS 终止后将请求转到本地监听地址；保留 Origin 和 Cookie。不要把 HTTP 开发模式暴露到公网。
+- 推荐配置 HTTPS 反向代理，TLS 终止后将请求转到本地监听地址；保留 Origin 和 Cookie。如果需要直接以公网 IP 通过 HTTP 访问，请使用下面的显式部署配置，不要复用本地短密码模式。
 - 管理账号暂不支持本地 MFA、密码找回或在线密码重置；建议管理员入口增加 VPN/访问控制。生产前需根据你们的威胁模型补充运维安全审查，不能将当前测试等同于完整 ASVS 认证。
 
 ### Docker 服务器部署
 
-保留了 `Dockerfile` 和 `compose.yaml`。本地 `.env` 与生产 `.env.production` 分开管理，二者都不进入 Git 或镜像。复制生产配置后，填写正式 HTTPS 域名、至少 15 字符的本地管理员密码和上游凭据，再启动容器：
+本地 `.env` 与生产 `.env.production` 分开管理，二者都不进入 Git 或镜像。首次部署从 `.env.production.example` 复制配置；已有 `.env.production` 请直接编辑，不要覆盖凭据。填写访问地址、至少 15 字符的初始管理员密码和上游凭据。
+
+**公网 IP + HTTP（无域名或证书）**：例如浏览器要访问 `http://203.0.113.10:3000`，在 `.env.production` 中设置以下三行；把示例 IP 替换为自己的公网 IP。`0.0.0.0` 只用作监听地址，不能写进 `PUBLIC_ORIGIN`。若更换端口，两个地址的端口都要改。
+
+```dotenv
+PUBLIC_ORIGIN=http://203.0.113.10:3000
+ALLOW_PUBLIC_HTTP=true
+PUBLISH_ADDR=0.0.0.0:3000
+```
+
+在云安全组和主机防火墙中允许需要的来源访问该 TCP 端口；能限制客户 IP 时优先限制。此模式下浏览器与工作台间的登录密码、会话 Cookie、提交的 API Key / 服务账号私钥均无传输加密，可能被窃听或篡改。来源校验和 CSRF Token 不能代替 TLS。服务端连接上游仍强制 HTTPS。
+
+**HTTPS 反向代理（默认）**：使用 `PUBLIC_ORIGIN=https://你的域名`，保留 `ALLOW_PUBLIC_HTTP=false` 和 `PUBLISH_ADDR=127.0.0.1:3000`。两种模式均使用以下命令部署或更新；在服务器取得新版代码后，修改配置并重新构建，不是只重启旧容器：
 
 ```sh
-cp .env.production.example .env.production
 chmod 600 .env.production
 docker compose --env-file .env.production up -d --build
 docker compose --env-file .env.production logs --tail=100 ali
 ```
 
-容器端口仅映射到宿主机 `127.0.0.1:3000`，需要另行配置 HTTPS 反向代理，并使 `PUBLIC_ORIGIN` 与访问域名完全一致。容器使用非 root 账户、只读根文件系统和独立 `ali-data` 持久卷，强制禁用本地短密码例外。初次在服务器部署会初始化独立数据库，不会自动带入本地数据库或管理员密码。迁移现有数据库时先完成密码升级，再使用停机备份或 SQLite 在线备份，并确保容器用户 UID 65532 可写数据目录。
+默认只发布到宿主机回环地址；在两种模式下 `PUBLIC_ORIGIN` 都必须与浏览器实际使用的协议、主机和端口一致，不带路径。容器使用非 root 账户、只读根文件系统和独立 `ali-data` 持久卷，强制禁用本地短密码例外。初次在服务器部署会初始化独立数据库，不会自动带入本地数据库或管理员密码。迁移现有数据库时先完成密码升级，再使用停机备份或 SQLite 在线备份，并确保容器用户 UID 65532 可写数据目录。
 
 自定义模板需要额外添加只读 volume 与容器内 `TEMPLATES_FILE`。此环境没有 Docker，镜像构建与容器运行需要在服务器上再验证。不要直接将本地开发用 `.env` 上传到服务器。
 

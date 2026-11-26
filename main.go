@@ -16,6 +16,9 @@ func main() {
 	if err != nil {
 		logger.Fatal(err)
 	}
+	if config.PublicHTTP {
+		logger.Print("WARNING: public HTTP enabled; browser passwords, session cookies and submitted AI credentials travel without TLS")
+	}
 	database, err := openDatabase(config.Database)
 	if err != nil {
 		logger.Fatal("cannot open application database")

@@ -2,6 +2,17 @@ import { useEffect, useState } from 'react'
 
 let bundle = null
 let generation = 0
+
+export function newSubmissionKey(source = globalThis.crypto) {
+  if (!source?.getRandomValues)
+    throw new Error(
+      '浏览器无法生成安全的提交标识，请使用支持 Web Crypto 的浏览器。'
+    )
+  return Array.from(source.getRandomValues(new Uint8Array(16)), (byte) =>
+    byte.toString(16).padStart(2, '0')
+  ).join('')
+}
+
 export function setSession(value) {
   bundle = value
   generation++

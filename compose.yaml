@@ -4,10 +4,11 @@ services:
     restart: unless-stopped
     stop_grace_period: 90s
     ports:
-      - "127.0.0.1:3000:3000"
+      - "${PUBLISH_ADDR:-127.0.0.1:3000}:3000"
     environment:
       LISTEN_ADDR: "0.0.0.0:3000"
-      PUBLIC_ORIGIN: "${PUBLIC_ORIGIN:?Set PUBLIC_ORIGIN to your HTTPS public origin}"
+      PUBLIC_ORIGIN: "${PUBLIC_ORIGIN:?Set PUBLIC_ORIGIN to the exact browser origin}"
+      ALLOW_PUBLIC_HTTP: "${ALLOW_PUBLIC_HTTP:-false}"
       DATABASE_PATH: "/data/ali.db"
       BOOTSTRAP_ADMIN_USERNAME: "${BOOTSTRAP_ADMIN_USERNAME:-admin}"
       BOOTSTRAP_ADMIN_PASSWORD: "${BOOTSTRAP_ADMIN_PASSWORD:-}"

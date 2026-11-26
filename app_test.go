@@ -1015,7 +1015,7 @@ func TestLocalArchiveEligibilityAndAuditAtomicity(t *testing.T) {
 }
 
 func TestProductionOriginAndSecureCookies(t *testing.T) {
-	for _, name := range []string{"LISTEN_ADDR", "PUBLIC_ORIGIN", "TEMPLATES_FILE", "UPSTREAM_USERNAME", "UPSTREAM_PASSWORD", "UPSTREAM_URL", "LOCAL_ALLOW_WEAK_BOOTSTRAP_PASSWORD"} {
+	for _, name := range []string{"LISTEN_ADDR", "PUBLIC_ORIGIN", "ALLOW_PUBLIC_HTTP", "TEMPLATES_FILE", "UPSTREAM_USERNAME", "UPSTREAM_PASSWORD", "UPSTREAM_URL", "LOCAL_ALLOW_WEAK_BOOTSTRAP_PASSWORD"} {
 		t.Setenv(name, "")
 	}
 	t.Setenv("LISTEN_ADDR", "0.0.0.0:3000")
@@ -1033,6 +1033,56 @@ func TestProductionOriginAndSecureCookies(t *testing.T) {
 	session := fixture.login(t, "alice")
 	if !session.cookie.Secure {
 		t.Fatal("HTTPS session missing Secure flag")
+	}
+}
+
+func TestPublicHTTPDeployment(t *testing.T) {
+	for _, name := range []string{"ALLOW_PUBLIC_HTTP", "LOCAL_ALLOW_WEAK_BOOTSTRAP_PASSWORD", "TEMPLATES_FILE", "UPSTREAM_USERNAME", "UPSTREAM_PASSWORD", "UPSTREAM_URL"} {
+		t.Setenv(name, "")
+	}
+	t.Setenv("PUBLIC_ORIGIN", "http://203.0.113.10:3000")
+	t.Setenv("LISTEN_ADDR", "0.0.0.0:3000")
+	if _, err := loadConfig(); err == nil {
+		t.Fatal("public HTTP accepted without opt-in")
+	}
+	t.Setenv("ALLOW_PUBLIC_HTTP", "true")
+	config, err := loadConfig()
+	if err != nil || config.SecureCookies || !config.PublicHTTP {
+		t.Fatalf("public HTTP opt-in failed: %v", err)
+	}
+	fixture := newFixture(t)
+	fixture.app.config.Origin = config.Origin
+	fixture.app.config.SecureCookies = config.SecureCookies
+	session := fixture.login(t, "alice")
+	if session.cookie.Secure || !session.cookie.HttpOnly || session.cookie.SameSite != http.SameSiteStrictMode {
+		t.Fatal("wrong public HTTP session cookie")
+	}
+	if got := fixture.request("GET", "/api/session", "", session, nil); got.Code != 200 || got.Header().Get("Strict-Transport-Security") != "" {
+		t.Fatal("public HTTP session unavailable or unexpectedly forces HTTPS")
+	}
+	for _, override := range []map[string]string{{"Origin": "http://203.0.113.10:3001"}, {"Origin": "https://evil.example"}, {"X-CSRF-Token": ""}} {
+		if got := fixture.request("POST", "/api/logout", "{}", session, override); got.Code != 403 {
+			t.Fatal("unsafe HTTP write accepted")
+		}
+	}
+	if got := fixture.request("POST", "/api/logout", "{}", session, nil); got.Code != 200 {
+		t.Fatal("same-origin HTTP write failed")
+	}
+	for _, tc := range []struct{ key, value string }{{"LOCAL_ALLOW_WEAK_BOOTSTRAP_PASSWORD", "true"}, {"UPSTREAM_URL", "http://example.org"}, {"PUBLIC_ORIGIN", "ftp://203.0.113.10"}, {"PUBLIC_ORIGIN", "http://0.0.0.0:3000"}, {"PUBLIC_ORIGIN", "http://127.0.0.1:3000"}, {"ALLOW_PUBLIC_HTTP", "not-a-boolean"}} {
+		t.Run(tc.key+"="+tc.value, func(t *testing.T) {
+			t.Setenv(tc.key, tc.value)
+			if _, err := loadConfig(); err == nil {
+				t.Fatal("invalid deployment accepted")
+			}
+		})
+	}
+	t.Setenv("PUBLIC_ORIGIN", "http://203.0.113.10:80/")
+	if config, err := loadConfig(); err != nil || config.Origin != "http://203.0.113.10" {
+		t.Fatal("default HTTP port mismatches browser Origin")
+	}
+	t.Setenv("PUBLIC_ORIGIN", "https://portal.example:443")
+	if config, err := loadConfig(); err != nil || config.PublicHTTP || !config.SecureCookies || config.Origin != "https://portal.example" {
+		t.Fatal("HTTP opt-in weakened HTTPS mode")
 	}
 }
 
